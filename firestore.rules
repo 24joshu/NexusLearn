@@ -1,0 +1,113 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Fields: uid, email, displayName, role, photoURL, createdAt, bio
+    //
+    // Collection: courses
+    // Fields: title, description, instructorId, category, price, thumbnail, status, createdAt
+    //
+    // Collection: courses/{courseId}/lessons
+    // Fields: courseId, title, content, videoUrl, pdfUrl, order, summary
+    //
+    // Collection: enrollments
+    // Fields: studentId, courseId, progress, completedLessons, enrolledAt
+    //
+    // Collection: chats
+    // Fields: userId, lessonId, messages
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         (request.auth.token.email == "saikrishnagummadidala34@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isInstructor() {
+      return isAuthenticated() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'instructor';
+    }
+
+    function isStudent() {
+      return isAuthenticated() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'student';
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+    function isValidUser(data) {
+      return hasOnlyAllowedFields(['uid', 'email', 'displayName', 'role', 'photoURL', 'createdAt']) &&
+             data.uid is string && data.email is string && isValidEmail(data.email) &&
+             data.role in ['student', 'instructor', 'admin'];
+    }
+
+    function isValidCourse(data) {
+      return hasOnlyAllowedFields(['title', 'description', 'pdfUrl', 'thumbnailUrl', 'published', 'createdAt', 'enrollmentCount', 'instructor', 'instructorId', 'level', 'content']) &&
+             data.title is string && data.published is bool;
+    }
+
+    function isValidEnrollment(data) {
+      return hasOnlyAllowedFields(['userId', 'courseId', 'progress', 'enrolledAt']) &&
+             data.userId is string && data.courseId is string;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{uid} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isOwner(uid) && isValidUser(request.resource.data) && (request.resource.data.role in ['student', 'instructor'] || isAdmin());
+      allow update: if isAuthenticated() && (isOwner(uid) || isAdmin()) && isValidUser(request.resource.data) && (request.resource.data.role == resource.data.role || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    match /courses/{courseId} {
+      allow read: if true;
+      allow create: if isAdmin() || (isInstructor() && request.resource.data.instructorId == request.auth.uid && isValidCourse(request.resource.data));
+      allow update: if isAdmin() || (isInstructor() && resource.data.instructorId == request.auth.uid && isValidCourse(request.resource.data));
+      allow delete: if isAdmin() || (isInstructor() && resource.data.instructorId == request.auth.uid);
+    }
+
+    match /enrollments/{enrollmentId} {
+      allow read: if isAuthenticated() && (request.auth.uid == resource.data.userId || isAdmin());
+      allow create: if isAuthenticated() && request.auth.uid == request.resource.data.userId && isValidEnrollment(request.resource.data);
+      allow update: if isAuthenticated() && (request.auth.uid == resource.data.userId || isAdmin()) && isValidEnrollment(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /quizzes/{quizId} {
+      allow read: if isAuthenticated();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /quiz_results/{resultId} {
+      allow read: if isAuthenticated() && (request.auth.uid == resource.data.userId || isAdmin());
+      allow create: if isAuthenticated() && request.auth.uid == request.resource.data.userId;
+      allow update, delete: if isAdmin();
+    }
+  }
+}

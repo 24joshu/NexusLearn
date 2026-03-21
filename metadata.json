@@ -1,0 +1,8 @@
+{
+  "name": "NexusLearnNew",
+  "description": "A premium AI-powered e-learning platform with 3D visuals, real-time tutoring, instructor course management, and advanced analytics.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
